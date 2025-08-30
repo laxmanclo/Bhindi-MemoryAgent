@@ -1,4 +1,4 @@
-# MemoryOS System
+# bhindi-memoryOS
 
 A memory management system for AI agents, enabling contextual memory storage and retrieval through a Python API with a Bhindi agent integration.
 
@@ -147,6 +147,29 @@ To add MemoryOS as a Bhindi agent in your project:
    ```
 
 5. Test the integration by making a sample query to ensure proper functionality
+
+## GitHub Repository Setup
+
+To set up this project as a GitHub repository named "bhindi-memoryOS":
+
+1. Create a new repository on GitHub:
+   - Go to [GitHub](https://github.com) and sign in
+   - Click the "+" icon in the top-right corner and select "New repository"
+   - Enter "bhindi-memoryOS" as the repository name
+   - Add an optional description
+   - Choose public or private visibility
+   - Click "Create repository"
+
+2. Push your local repository to GitHub:
+   ```
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/YOUR-USERNAME/bhindi-memoryOS.git
+   git push -u origin main
+   ```
+   (Replace `YOUR-USERNAME` with your GitHub username)
 
 ## License
 

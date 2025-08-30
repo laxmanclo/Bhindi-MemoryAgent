@@ -63,8 +63,14 @@ To expose your local MemoryOS API for external access:
      MEMORYOS_API_URL=https://your-ngrok-url-here
      PORT=3000
      ```
-   - Restart the Bhindi agent
-
+   - Talk to Bhindi:
+      ```
+      Add a new agent with the following details:
+         - ID: your-memory-agent-name
+         - Name: your-memory-agent-name
+         - Description: An agent with memory capabilities that can remember conversations, create new chat sessions, and retrieve past information
+         - Endpoint: https://your-ngrok-url-here 
+      ```
 ## API Endpoints
 
 The MemoryOS API provides several endpoints:

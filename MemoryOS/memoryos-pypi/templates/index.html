@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+j    <title>MemoryOS with Claude AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #5D3FD3;
+            --primary-hover: #4E34B1;
+            --secondary-color: #00B2CA;
+            --bg-color: #F8F9FA;
+            --sidebar-bg: #1A1C37;
+            --text-color: #333333;
+            --light-text: #FFFFFF;
+            --border-radius: 12px;
+            --message-radius: 16px;
+            --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            line-height: 1.6;
+        }
+
+        .sidebar {
+            width: 280px;
+            background-color: var(--sidebar-bg);
+            color: var(--light-text);
+            padding: 24px;
+            box-shadow: var(--box-shadow);
+            display: flex;
+            flex-direction: column;
+            z-index: 10;
+        }
+
+        .sidebar h2 {
+            text-align: center;
+            color: var(--light-text);
+            margin-bottom: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar h2::before {
+            content: "🧠";
+            margin-right: 8px;
+            font-size: 20px;
+        }
+
+        .new-chat-button {
+            background-color: var(--secondary-color);
+            color: var(--light-text);
+            padding: 12px;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 24px;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .new-chat-button:hover {
+            background-color: #0095A8;
+            transform: translateY(-2px);
+        }
+
+        .new-chat-button::before {
+            content: "+";
+            margin-right: 8px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .chat-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .chat-list-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            border-radius: var(--border-radius);
+            margin-bottom: 8px;
+            transition: var(--transition);
+            font-size: 14px;
+            position: relative;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .chat-list-item:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-list-item.active {
+            background-color: rgba(255, 255, 255, 0.15);
+            font-weight: 500;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            max-width: calc(100% - 280px);
+        }
+
+        .container {
+            flex-grow: 1;
+            background-color: #fff;
+            padding: 24px;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            display: flex;
+            flex-direction: column;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            text-align: center;
+            margin-bottom: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .claude-logo {
+            font-size: 24px;
+            color: var(--primary-color);
+        }
+
+        .chat-box {
+            border: 1px solid #E5E7EB;
+            padding: 20px;
+            height: calc(100vh - 250px);
+            overflow-y: auto;
+            margin-bottom: 20px;
+            background-color: #FAFAFA;
+            border-radius: var(--border-radius);
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: var(--message-radius);
+            max-width: 85%;
+            line-height: 1.5;
+            position: relative;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-message {
+            background-color: var(--primary-color);
+            color: white;
+            text-align: left;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+
+        .agent-message {
+            background-color: #F1F1F1;
+            text-align: left;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+        }
+
+        .input-area {
+            display: flex;
+            background-color: #FAFAFA;
+            padding: 12px;
+            border-radius: var(--border-radius);
+            border: 1px solid #E5E7EB;
+        }
+
+        .input-area input[type="text"] {
+            flex-grow: 1;
+            padding: 12px 16px;
+            border: none;
+            background-color: transparent;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .input-area button {
+            padding: 12px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+
+        .input-area button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 10px;
+            font-style: italic;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .loading::before {
+            content: "";
+            width: 20px;
+            height: 20px;
+            border: 3px solid #DDDDDD;
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s infinite linear;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .memory-indicator {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .memory-pill {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin: 0 5px;
+            font-size: 12px;
+            color: white;
+        }
+
+        .short-term {
+            background-color: #FF6B6B;
+        }
+
+        .mid-term {
+            background-color: #4D96FF;
+        }
+
+        .long-term {
+            background-color: #6BCB77;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>MemoryOS</h2>
+        <button class="new-chat-button" onclick="newChat()">+ New Chat</button>
+        <ul class="chat-list" id="chatList">
+            <!-- Chat items will be loaded here -->
+        </ul>
+    </div>
+    <div class="main-content">
+        <div class="container">
+            <h1><span class="claude-logo">🟣</span>MemoryOS with Claude AI</h1>
+            <div class="chat-box" id="chatBox">
+                <!-- Chat messages will be loaded here -->
+            </div>
+            <div class="input-area">
+                <input type="text" id="userInput" placeholder="Type your message here..." onkeydown="if(event.keyCode === 13) sendMessage()">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+            <div class="loading" id="loadingIndicator" style="display: none;">Thinking with memory...</div>
+            <div class="memory-indicator">
+                <span class="memory-pill short-term">Short-term</span>
+                <span class="memory-pill mid-term">Mid-term</span>
+                <span class="memory-pill long-term">Long-term</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChatId = null;
+        let chats = {}; // Stores chat history: { chatId: [{sender: 'user/agent', message: '...'}] }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadChats();
+            if (!currentChatId) {
+                newChat(); // Start a new chat if no existing chat is loaded
+            } else {
+                renderChat(currentChatId);
+            }
+        });
+
+        async function loadChats() {
+            try {
+                const response = await fetch('/chats');
+                const data = await response.json();
+                chats = data.chats || {};
+                currentChatId = data.currentChatId || null;
+                renderChatList();
+            } catch (error) {
+                console.error('Error loading chats:', error);
+                chats = {};
+                currentChatId = null;
+            }
+        }
+
+        function renderChatList() {
+            const chatList = document.getElementById('chatList');
+            chatList.innerHTML = '';
+            const chatIds = Object.keys(chats).sort((a, b) => {
+                // Sort by last message timestamp if available, otherwise by chat ID
+                const lastMessageA = chats[a].length > 0 ? chats[a][chats[a].length - 1].timestamp : 0;
+                const lastMessageB = chats[b].length > 0 ? chats[b][chats[b].length - 1].timestamp : 0;
+                return lastMessageB - lastMessageA; // Newest first
+            });
+
+            if (chatIds.length === 0) {
+                const noChatsMessage = document.createElement('li');
+                noChatsMessage.textContent = 'No chats yet. Start a new one!';
+                noChatsMessage.style.color = '#bdc3c7';
+                noChatsMessage.style.textAlign = 'center';
+                noChatsMessage.style.marginTop = '20px';
+                chatList.appendChild(noChatsMessage);
+                return;
+            }
+
+            chatIds.forEach(chatId => {
+                const chatItem = document.createElement('li');
+                chatItem.classList.add('chat-list-item');
+                if (chatId === currentChatId) {
+                    chatItem.classList.add('active');
+                }
+                // Display a preview of the chat (e.g., first message or a default name)
+                const chatName = chats[chatId] && chats[chatId].length > 0 ?
+                                 chats[chatId][0].message.substring(0, 25) + '...' :
+                                 `Chat ${chatId.substring(0, 8)}`;
+                chatItem.textContent = chatName;
+                chatItem.onclick = () => switchChat(chatId);
+                chatList.appendChild(chatItem);
+            });
+        }
+
+        function renderChat(chatId) {
+            const chatBox = document.getElementById('chatBox');
+            chatBox.innerHTML = ''; // Clear current chat messages
+
+            const messages = chats[chatId] || [];
+            if (messages.length === 0) {
+                const initialMessageDiv = document.createElement('div');
+                initialMessageDiv.classList.add('agent-message', 'message');
+                initialMessageDiv.textContent = 'Hello! I\'m MemoryOS powered by Claude AI. I can remember our conversation and learn about you over time. Ask me anything!';
+                chatBox.appendChild(initialMessageDiv);
+            } else {
+                messages.forEach(msg => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.classList.add('message', msg.sender === 'user' ? 'user-message' : 'agent-message');
+                    messageDiv.textContent = msg.message;
+                    chatBox.appendChild(messageDiv);
+                });
+            }
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+        }
+
+        async function newChat() {
+            try {
+                const response = await fetch('/new_chat', { method: 'POST' });
+                const data = await response.json();
+                currentChatId = data.chat_id;
+                chats[currentChatId] = []; // Initialize new chat history
+                renderChatList();
+                renderChat(currentChatId);
+                document.getElementById('userInput').focus();
+            } catch (error) {
+                console.error('Error creating new chat:', error);
+            }
+        }
+
+        async function switchChat(chatId) {
+            if (currentChatId === chatId) return; // Already on this chat
+
+            currentChatId = chatId;
+            renderChat(currentChatId);
+            renderChatList(); // Update active class in sidebar
+
+            // Inform the backend about the chat switch
+            try {
+                await fetch('/switch_chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chat_id: chatId })
+                });
+            } catch (error) {
+                console.error('Error switching chat on backend:', error);
+            }
+        }
+
+        async function sendMessage() {
+            const userInput = document.getElementById('userInput');
+            const chatBox = document.getElementById('chatBox');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const message = userInput.value.trim();
+
+            if (message === '' || !currentChatId) return;
+
+            // Add user message to current chat history
+            chats[currentChatId].push({ sender: 'user', message: message, timestamp: Date.now() });
+            renderChat(currentChatId); // Re-render to show new message
+
+            userInput.value = ''; // Clear input
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+
+            loadingIndicator.style.display = 'flex'; // Show loading indicator
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ chat_id: currentChatId, message: message }),
+                });
+
+                const data = await response.json();
+
+                // Add agent response to current chat history
+                chats[currentChatId].push({ sender: 'agent', message: data.response, timestamp: Date.now() });
+                renderChat(currentChatId); // Re-render to show new message
+                renderChatList(); // Update chat list to reflect new message (for sorting)
+
+            } catch (error) {
+                console.error('Error:', error);
+                const errorMessageDiv = document.createElement('div');
+                errorMessageDiv.classList.add('message', 'agent-message');
+                errorMessageDiv.textContent = 'Error: Could not get a response. Please check the server logs.';
+                chatBox.appendChild(errorMessageDiv);
+            } finally {
+                loadingIndicator.style.display = 'none'; // Hide loading indicator
+                chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+            }
+        }
+    </script>
+</body>
+</html>

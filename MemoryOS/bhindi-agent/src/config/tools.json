@@ -1,0 +1,70 @@
+[
+  {
+    "name": "query_memory",
+    "description": "Query the MemoryOS system to retrieve relevant information and get contextual responses",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The query or question to ask the memory system"
+        }
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "create_new_chat",
+    "description": "Create a new chat session in the memory system",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "chat_name": {
+          "type": "string",
+          "description": "Optional name for the new chat session",
+          "default": "New Chat"
+        }
+      }
+    }
+  },
+  {
+    "name": "switch_to_chat",
+    "description": "Switch to an existing chat session",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "chat_id": {
+          "type": "string",
+          "description": "The ID of the chat session to switch to"
+        }
+      },
+      "required": ["chat_id"]
+    }
+  },
+  {
+    "name": "add_memory",
+    "description": "Store a new memory interaction in the MemoryOS system",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_input": {
+          "type": "string",
+          "description": "The user's input/message to store"
+        },
+        "agent_response": {
+          "type": "string",
+          "description": "The agent's response to store"
+        }
+      },
+      "required": ["user_input", "agent_response"]
+    }
+  },
+  {
+    "name": "get_chat_list",
+    "description": "Get a list of all available chat sessions",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]

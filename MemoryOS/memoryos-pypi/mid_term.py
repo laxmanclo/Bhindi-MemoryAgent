@@ -336,9 +336,16 @@ class MidTermMemory:
 
     def search_sessions(self, query_text, segment_similarity_threshold=0.1, page_similarity_threshold=0.1, 
                           top_k_sessions=5, keyword_alpha=1.0, recency_tau_search=3600):
+        """
+        Search for relevant sessions based on query text.
+        Optimized for performance while maintaining Pinecone for scalability.
+        """
         if not self.sessions:
             return []
 
+        import time
+        start_time = time.time()
+        
         query_vec = get_embedding(
             query_text,
             model_name=self.embedding_model_name,
@@ -347,17 +354,22 @@ class MidTermMemory:
         query_vec = normalize_vector(query_vec)
         query_keywords = set()  # Keywords extraction removed, relying on semantic similarity
 
-        candidate_sessions = []
         session_ids = list(self.sessions.keys())
         if not session_ids: return []
 
-        # If Pinecone is available, use it for search
-        if self.pinecone_index:
+        # Determine search strategy based on session count
+        # For small session counts, in-memory is faster; for large counts, Pinecone is better
+        use_in_memory = len(session_ids) < 100  # Threshold can be adjusted
+
+        # If Pinecone is available and we have enough sessions to justify using it
+        if self.pinecone_index and not use_in_memory:
             try:
-                # First, store all session embeddings in Pinecone temporarily for this search
-                namespace = "mid-term-search-temp"
-                vectors_to_upsert = []
+                # Use persistent Pinecone namespace for sessions to avoid recreating
+                namespace = "mid-term-sessions"
                 
+                # Check if we need to update vectors (simplified by just doing a fresh upsert)
+                # A more sophisticated approach would track which sessions are already in Pinecone
+                vectors_to_upsert = []
                 for i, sid in enumerate(session_ids):
                     vectors_to_upsert.append({
                         "id": sid,
@@ -365,44 +377,51 @@ class MidTermMemory:
                         "metadata": {"session_id": sid, "idx": i}
                     })
                 
-                # Upsert all vectors at once
+                # Use batch upsert for better performance
                 if vectors_to_upsert:
-                    self.pinecone_index.upsert(vectors=vectors_to_upsert, namespace=namespace)
+                    # Use batch size to avoid overwhelming Pinecone
+                    batch_size = 100
+                    for i in range(0, len(vectors_to_upsert), batch_size):
+                        batch = vectors_to_upsert[i:i+batch_size]
+                        self.pinecone_index.upsert(vectors=batch, namespace=namespace)
                 
-                # Search with the query vector
-                query_result = self.pinecone_index.query(
-                    vector=query_vec.tolist(),
-                    top_k=min(top_k_sessions, len(session_ids)),
-                    namespace=namespace,
-                    include_metadata=True
-                )
+                print(f"MidTermMemory: Using Pinecone for {len(session_ids)} sessions")
+                # Search with the query vector - add timeout for faster response
+                import concurrent.futures
                 
-                # Convert results to match the format expected by the rest of the method
-                distances = np.array([[match.score for match in query_result.matches]])
-                indices = np.array([[int(match.metadata["idx"]) for match in query_result.matches]])
+                def query_pinecone():
+                    return self.pinecone_index.query(
+                        vector=query_vec.tolist(),
+                        top_k=min(top_k_sessions, len(session_ids)),
+                        namespace=namespace,
+                        include_metadata=True
+                    )
                 
-                # Clean up by deleting the vectors
-                self.pinecone_index.delete(delete_all=True, namespace=namespace)
+                # Use a timeout to prevent hanging on slow Pinecone queries
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(query_pinecone)
+                    try:
+                        query_result = future.result(timeout=5)  # 5-second timeout
+                        
+                        # Convert results to expected format
+                        distances = np.array([[match.score for match in query_result.matches]])
+                        indices = np.array([[int(match.metadata["idx"]) for match in query_result.matches]])
+                        
+                        print(f"MidTermMemory: Pinecone search completed in {time.time() - start_time:.3f}s")
+                    except concurrent.futures.TimeoutError:
+                        print("MidTermMemory: Pinecone query timed out, falling back to in-memory")
+                        raise TimeoutError("Pinecone query timed out")
                 
             except Exception as e:
-                print(f"MidTermMemory: Error searching with Pinecone: {e}. Falling back to direct similarity.")
-                # Fall back to direct vector similarity calculation
-                session_scores = []
-                for i, sid in enumerate(session_ids):
-                    session = self.sessions[sid]
-                    session_vec = np.array(session["summary_embedding"], dtype=np.float32)
-                    similarity = float(np.dot(session_vec, query_vec))
-                    session_scores.append((similarity, i))
-                
-                # Sort by similarity score in descending order and get top_k
-                session_scores.sort(reverse=True, key=lambda x: x[0])
-                top_k_scores = session_scores[:min(top_k_sessions, len(session_ids))]
-                
-                # Convert to the format expected by the rest of the method
-                distances = np.array([[score for score, _ in top_k_scores]])
-                indices = np.array([[idx for _, idx in top_k_scores]])
+                print(f"MidTermMemory: Error or timeout with Pinecone: {e}. Using in-memory search.")
+                use_in_memory = True
         else:
-            # Direct vector similarity calculation if Pinecone is not available
+            use_in_memory = True
+            
+        # Direct in-memory search as fallback or for small session counts
+        if use_in_memory:
+            print(f"MidTermMemory: Using in-memory search for {len(session_ids)} sessions")
+            # Direct vector similarity calculation
             session_scores = []
             for i, sid in enumerate(session_ids):
                 session = self.sessions[sid]
@@ -410,67 +429,116 @@ class MidTermMemory:
                 similarity = float(np.dot(session_vec, query_vec))
                 session_scores.append((similarity, i))
             
+            # Filter by threshold before sorting to avoid unnecessary operations
+            session_scores = [(score, idx) for score, idx in session_scores if score >= segment_similarity_threshold]
+            
             # Sort by similarity score in descending order and get top_k
             session_scores.sort(reverse=True, key=lambda x: x[0])
-            top_k_scores = session_scores[:min(top_k_sessions, len(session_ids))]
+            top_k_scores = session_scores[:min(top_k_sessions, len(session_scores))]
             
             # Convert to the format expected by the rest of the method
             distances = np.array([[score for score, _ in top_k_scores]])
             indices = np.array([[idx for _, idx in top_k_scores]])
+            
+            print(f"MidTermMemory: In-memory search completed in {time.time() - start_time:.3f}s")
 
+        # Process matched sessions - optimize page matching
+        page_search_start = time.time()
         results = []
         current_time_str = get_timestamp()
+        sessions_to_update = []  # Track sessions needing heat updates
+
+        # Early return if no matches
+        if len(indices[0]) == 0:
+            print("MidTermMemory: No matching sessions found")
+            return []
 
         for i, idx in enumerate(indices[0]):
-            if idx == -1: continue
+            if idx == -1: 
+                continue
             
             session_id = session_ids[idx]
             session = self.sessions[session_id]
             semantic_sim_score = float(distances[0][i]) # This is the dot product
 
-            # Keyword similarity for session summary
+            # Fast keyword similarity calculation
             session_keywords = set(session.get("summary_keywords", []))
             s_topic_keywords = 0
             if query_keywords and session_keywords:
                 intersection = len(query_keywords.intersection(session_keywords))
                 union = len(query_keywords.union(session_keywords))
-                if union > 0: s_topic_keywords = intersection / union
-            
-            # Time decay for session recency in search scoring
-            # time_decay_factor = compute_time_decay(session["timestamp"], current_time_str, tau_hours=recency_tau_search)
+                if union > 0: 
+                    s_topic_keywords = intersection / union
             
             # Combined score for session relevance
-            session_relevance_score =  (semantic_sim_score + keyword_alpha * s_topic_keywords)
+            session_relevance_score = semantic_sim_score + keyword_alpha * s_topic_keywords
 
-            if session_relevance_score >= segment_similarity_threshold:
-                matched_pages_in_session = []
-                for page in session.get("details", []):
-                    page_embedding = np.array(page["page_embedding"], dtype=np.float32)
-                    # page_keywords = set(page.get("page_keywords", []))
-                    
-                    page_sim_score = float(np.dot(page_embedding, query_vec))
-                    # Can also add keyword sim for pages if needed, but keeping it simpler for now
+            # Skip if below threshold
+            if session_relevance_score < segment_similarity_threshold:
+                continue
 
-                    if page_sim_score >= page_similarity_threshold:
-                        matched_pages_in_session.append({"page_data": page, "score": page_sim_score})
+            # Optimize page matching with batched processing
+            matched_pages_in_session = []
+            pages = session.get("details", [])
+            
+            # Process pages in batches of 10 for vectorized operations
+            batch_size = 10
+            for batch_start in range(0, len(pages), batch_size):
+                batch_end = min(batch_start + batch_size, len(pages))
+                batch = pages[batch_start:batch_end]
                 
-                if matched_pages_in_session:
-                    # Update session access stats
-                    session["N_visit"] += 1
-                    session["last_visit_time"] = current_time_str
-                    session["access_count_lfu"] = session.get("access_count_lfu", 0) + 1
-                    self.access_frequency[session_id] = session["access_count_lfu"]
-                    session["H_segment"] = compute_segment_heat(session)
-                    self.rebuild_heap() # Heat changed
+                # Prepare page embeddings for batch processing
+                page_embeddings = [np.array(page["page_embedding"], dtype=np.float32) for page in batch]
+                
+                # Calculate similarities in one vectorized operation if possible
+                try:
+                    # Try vectorized approach
+                    page_embeddings_matrix = np.vstack(page_embeddings)
+                    similarities = np.dot(page_embeddings_matrix, query_vec)
                     
-                    results.append({
-                        "session_id": session_id,
-                        "session_summary": session["summary"],
-                        "session_relevance_score": session_relevance_score,
-                        "matched_pages": sorted(matched_pages_in_session, key=lambda x: x["score"], reverse=True) # Sort pages by score
-                    })
+                    # Add matching pages
+                    for j, sim in enumerate(similarities):
+                        if sim >= page_similarity_threshold:
+                            matched_pages_in_session.append({"page_data": batch[j], "score": float(sim)})
+                except:
+                    # Fallback to loop if vectorization fails
+                    for j, page in enumerate(batch):
+                        page_sim_score = float(np.dot(page_embeddings[j], query_vec))
+                        if page_sim_score >= page_similarity_threshold:
+                            matched_pages_in_session.append({"page_data": page, "score": page_sim_score})
+            
+            # Only track sessions with matched pages
+            if matched_pages_in_session:
+                # Update session stats (without immediate heap rebuild)
+                session["N_visit"] += 1
+                session["last_visit_time"] = current_time_str
+                session["access_count_lfu"] = session.get("access_count_lfu", 0) + 1
+                self.access_frequency[session_id] = session["access_count_lfu"]
+                session["H_segment"] = compute_segment_heat(session)
+                sessions_to_update.append(session_id)  # Track for heap rebuild
+                
+                # Add matched session to results
+                results.append({
+                    "session_id": session_id,
+                    "session_summary": session["summary"],
+                    "session_relevance_score": session_relevance_score,
+                    "matched_pages": sorted(matched_pages_in_session, key=lambda x: x["score"], reverse=True)
+                })
         
-        self.save() # Save changes from access updates
+        # Rebuild heap once after processing all sessions
+        if sessions_to_update:
+            self.rebuild_heap()  # Single rebuild for all updated sessions
+        
+        # Save changes if any sessions were updated
+        if sessions_to_update:
+            self.save()  # Single save after all processing
+        
+        # Log performance metrics
+        total_time = time.time() - start_time
+        page_search_time = time.time() - page_search_start
+        print(f"MidTermMemory: Page search completed in {page_search_time:.3f}s")
+        print(f"MidTermMemory: Total search time: {total_time:.3f}s")
+        
         # Sort final results by session_relevance_score
         return sorted(results, key=lambda x: x["session_relevance_score"], reverse=True)
 

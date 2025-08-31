@@ -86,8 +86,27 @@ def get_embedding(text, model_name="all-MiniLM-L6-v2", **kwargs):
         if model_name not in _models:
             try:
                 print(f"Loading model: {model_name}...")
-                _models[model_name] = SentenceTransformer(model_name)
-                print(f"-> Using SentenceTransformer with init kwargs: {kwargs}")
+                # Fix for PyTorch tensor error - proper model initialization
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                
+                # Handle meta tensors properly using to_empty() if needed
+                try:
+                    _models[model_name] = SentenceTransformer(model_name).to(device)
+                    print(f"-> Using SentenceTransformer with init kwargs: {kwargs} on device: {device}")
+                except RuntimeError as re:
+                    if "Cannot copy out of meta tensor" in str(re):
+                        print(f"-> Using to_empty() for meta tensor handling")
+                        model = SentenceTransformer(model_name)
+                        model = model.to_empty(device=device)
+                        # Materialize weights after to_empty()
+                        with torch.no_grad():
+                            for param in model.parameters():
+                                if param.is_meta:
+                                    param.materialize()
+                        _models[model_name] = model
+                    else:
+                        raise
             except Exception as e:
                 print(f"Error loading model {model_name}: {e}")
                 raise
@@ -100,8 +119,27 @@ def get_embedding(text, model_name="all-MiniLM-L6-v2", **kwargs):
     if model_name not in _models:
         try:
             print(f"Loading model: {model_name}...")
-            _models[model_name] = SentenceTransformer(model_name)
-            print(f"-> Using SentenceTransformer with init kwargs: {kwargs}")
+            # Fix for PyTorch tensor error - proper model initialization
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            
+            # Handle meta tensors properly using to_empty() if needed
+            try:
+                _models[model_name] = SentenceTransformer(model_name).to(device)
+                print(f"-> Using SentenceTransformer with init kwargs: {kwargs} on device: {device}")
+            except RuntimeError as re:
+                if "Cannot copy out of meta tensor" in str(re):
+                    print(f"-> Using to_empty() for meta tensor handling")
+                    model = SentenceTransformer(model_name)
+                    model = model.to_empty(device=device)
+                    # Materialize weights after to_empty()
+                    with torch.no_grad():
+                        for param in model.parameters():
+                            if param.is_meta:
+                                param.materialize()
+                    _models[model_name] = model
+                else:
+                    raise
         except Exception as e:
             print(f"Error loading model {model_name}: {e}")
             raise

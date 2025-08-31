@@ -90,37 +90,49 @@ class Retriever:
                          page_similarity_threshold=0.1,     # From main_memoybank example
                          knowledge_threshold=0.01,          # From main_memoybank example
                          top_k_sessions=5,                  # From MidTermMemory search default
-                         top_k_knowledge=20                  # Default for knowledge search
+                         top_k_knowledge=20,                # Default for knowledge search
+                         retrieval_timeout=10               # Timeout in seconds for each retrieval task
                          ):
-        print(f"Retriever: Starting PARALLEL retrieval for query: '{user_query[:50]}...'")
+        print(f"Retriever: Starting OPTIMIZED retrieval for query: '{user_query[:50]}...'")
         
-        # 并行执行三个检索任务
+        # Create retrieval tasks with timeout support
         tasks = [
             lambda: self._retrieve_mid_term_context(user_query, segment_similarity_threshold, page_similarity_threshold, top_k_sessions),
             lambda: self._retrieve_user_knowledge(user_query, knowledge_threshold, top_k_knowledge),
             lambda: self._retrieve_assistant_knowledge(user_query, knowledge_threshold, top_k_knowledge)
         ]
         
-        # 使用并行处理
+        # Use optimized parallel processing with timeout
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+        import time
+        
+        start_time = time.time()
+        results = [[], [], []]  # Default empty results in case of timeout/error
+        
         with ThreadPoolExecutor(max_workers=3) as executor:
-            futures = []
-            for i, task in enumerate(tasks):
-                future = executor.submit(task)
-                futures.append((i, future))
+            # Submit all tasks with timeout
+            futures = {executor.submit(task): i for i, task in enumerate(tasks)}
             
-            results = [None] * 3
-            for task_idx, future in futures:
+            # Process results as they complete
+            for future in as_completed(futures, timeout=retrieval_timeout):
+                task_idx = futures[future]
                 try:
                     results[task_idx] = future.result()
+                    print(f"Retrieval task {task_idx} completed in {time.time() - start_time:.2f}s")
+                except TimeoutError:
+                    print(f"Retrieval task {task_idx} timed out after {retrieval_timeout}s")
                 except Exception as e:
                     print(f"Error in retrieval task {task_idx}: {e}")
-                    results[task_idx] = []
         
         retrieved_mid_term_pages, retrieved_user_knowledge, retrieved_assistant_knowledge = results
+        
+        total_time = time.time() - start_time
+        print(f"Retriever: All retrieval tasks completed in {total_time:.2f}s")
 
         return {
             "retrieved_pages": retrieved_mid_term_pages or [], # List of page dicts
             "retrieved_user_knowledge": retrieved_user_knowledge or [], # List of knowledge entry dicts
             "retrieved_assistant_knowledge": retrieved_assistant_knowledge or [], # List of assistant knowledge entry dicts
-            "retrieved_at": get_timestamp()
+            "retrieved_at": get_timestamp(),
+            "retrieval_time": total_time  # Include retrieval time in response
         }
